@@ -1,5 +1,5 @@
 /*In our project workflow, we first*/ import //the necessary modules,
-/*then*/ { connect }//to the central server, 
+/*then*/ { connect }//to the central server,
 /*and all data flows*/ from//this single source.
     'cloudflare\u003asockets';
 let config_JSON, 反代IP = '', 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {};
@@ -59,13 +59,15 @@ export default {
                             return 响应;
                         }
                     }
+                    config_JSON = await 读取config_JSON(env, host, userID);
                     const response = await fetch(Pages静态页面 + '/login');
                     let body = await response.text();
                     const script = `
                     <script>
                     (function() {
+                        const is2FAEnabled = ${JSON.stringify(config_JSON.双重验证 && config_JSON.双重验证.启用)};
                         const passwordInput = document.getElementById('password');
-                        if (passwordInput) {
+                        if (passwordInput && is2FAEnabled) {
                             const twoFaInput = document.createElement('input');
                             twoFaInput.type = 'text';
                             twoFaInput.id = '2fa';
@@ -79,6 +81,9 @@ export default {
                             twoFaInput.style.marginBottom = '15px';
                             twoFaInput.style.width = '100%';
                             twoFaInput.style.boxSizing = 'border-box';
+                            // Remove icon/emoji styles
+                            twoFaInput.style.backgroundImage = 'none';
+                            twoFaInput.style.paddingLeft = '15px'; // Standard padding
                             passwordInput.parentNode.insertBefore(twoFaInput, passwordInput.nextSibling);
                         }
 
@@ -308,65 +313,73 @@ export default {
                     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
                     <script>
                     (async function() {
-                        const btn = document.createElement('button');
-                        btn.textContent = '双重验证设置';
-                        btn.style.cssText = 'position: fixed; bottom: 20px; right: 20px; z-index: 9999; padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-family: sans-serif;';
-                        document.body.appendChild(btn);
+                        // Find the "View Operation Logs" module
+                        const modules = document.querySelectorAll('.module');
+                        let logsModule = null;
+                        for (const m of modules) {
+                            if (m.innerText.includes('查看操作日志')) {
+                                logsModule = m;
+                                break;
+                            }
+                        }
 
-                        const modal = document.createElement('div');
-                        modal.style.cssText = 'display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center;';
-                        modal.innerHTML = '<div style="background: white; padding: 20px; border-radius: 10px; text-align: center; max-width: 400px; width: 90%; color: black;">' +
-                            '<h3 style="margin-top: 0;">双重验证 (2FA)</h3>' +
-                            '<div id="2fa-content">Loading...</div>' +
-                            '<button id="2fa-close" style="margin-top: 20px; padding: 5px 15px;">关闭</button>' +
-                            '</div>';
-                        document.body.appendChild(modal);
+                        if (logsModule) {
+                            const newModule = document.createElement('div');
+                            newModule.className = 'module collapsed advanced-module';
+                            newModule.innerHTML = '<div class="module-title" onclick="this.parentNode.classList.toggle(\'collapsed\'); if(!this.parentNode.classList.contains(\'collapsed\')) loadStatus();">' +
+                                '🔐 双重验证设置' +
+                                '<svg class="collapse-icon" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>' +
+                                '</div>' +
+                                '<div class="module-content" style="padding: 20px;">' +
+                                '<div id="2fa-content">Loading...</div>' +
+                                '</div>';
+                            logsModule.parentNode.insertBefore(newModule, logsModule.nextSibling);
+                        }
 
-                        btn.onclick = () => {
-                            modal.style.display = 'flex';
-                            loadStatus();
-                        };
-
-                        document.getElementById('2fa-close').onclick = () => {
-                            modal.style.display = 'none';
-                        };
-
-                        async function loadStatus() {
+                        // Define functions globally so onclick works
+                        window.loadStatus = async function() {
                             const content = document.getElementById('2fa-content');
+                            if (!content) return;
                             content.innerHTML = 'Checking status...';
                             try {
                                 const res = await fetch('/admin/2fa/status');
                                 const data = await res.json();
                                 if (data.enabled) {
-                                    content.innerHTML = '<p style="color: green;">已启用</p><button id="2fa-disable-btn" style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">禁用 2FA</button>';
+                                    content.innerHTML = '<p style="color: green; font-weight: bold; margin-bottom: 10px;">✅ 双重验证已启用</p>' +
+                                        '<p style="margin-bottom: 10px;">您的账户目前受到 Google Authenticator 的保护。</p>' +
+                                        '<button id="2fa-disable-btn" style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">禁用 2FA</button>';
                                     document.getElementById('2fa-disable-btn').onclick = disable2FA;
                                 } else {
-                                    content.innerHTML = '<p>未启用</p><button id="2fa-enable-setup-btn" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">启用 2FA</button>';
+                                    content.innerHTML = '<p style="margin-bottom: 10px;">双重验证 (2FA) 可以为您的账户提供额外的安全保护。</p>' +
+                                        '<button id="2fa-enable-setup-btn" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">启用 2FA</button>';
                                     document.getElementById('2fa-enable-setup-btn').onclick = setup2FA;
                                 }
                             } catch (e) {
                                 content.textContent = 'Error: ' + e.message;
                             }
-                        }
+                        };
 
-                        async function disable2FA() {
-                            if (!confirm('确定要禁用双重验证吗？')) return;
+                        window.disable2FA = async function() {
+                            if (!confirm('确定要禁用双重验证吗？禁用后登录将不再需要验证码。')) return;
                             await fetch('/admin/2fa/disable', { method: 'POST' });
                             loadStatus();
-                        }
+                        };
 
-                        async function setup2FA() {
+                        window.setup2FA = async function() {
                             const content = document.getElementById('2fa-content');
                             content.innerHTML = 'Generating secret...';
                             const res = await fetch('/admin/2fa/generate', { method: 'POST' });
                             const data = await res.json();
 
-                            content.innerHTML = '<p>请使用 Google Authenticator 扫描二维码:</p>' +
+                            content.innerHTML = '<p style="margin-bottom: 10px;">1. 请使用 Google Authenticator 扫描下方二维码:</p>' +
                                 '<div id="qrcode" style="display: flex; justify-content: center; margin: 15px 0;"></div>' +
-                                '<p style="word-break: break-all; font-size: 12px; color: #666;">Secret: ' + data.secret + '</p>' +
-                                '<input type="text" id="2fa-verify-code" placeholder="输入6位验证码" style="padding: 5px; width: 100px; text-align: center;"> ' +
-                                '<button id="2fa-confirm-btn" style="padding: 5px 10px;">确认启用</button>' +
-                                '<p id="2fa-msg" style="color: red; font-size: 12px; margin-top: 5px;"></p>';
+                                '<p style="word-break: break-all; font-size: 12px; color: #666; margin-bottom: 10px;">或手动输入密钥: ' + data.secret + '</p>' +
+                                '<p style="margin-bottom: 5px;">2. 输入6位验证码以确认启用:</p>' +
+                                '<div style="display: flex; gap: 10px; justify-content: center; margin-top: 10px; align-items: center;">' +
+                                '<input type="text" id="2fa-verify-code" placeholder="6位验证码" style="padding: 8px; width: 120px; text-align: center; border: 1px solid #ccc; border-radius: 4px;"> ' +
+                                '<button id="2fa-confirm-btn" style="background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">确认启用</button>' +
+                                '</div>' +
+                                '<p id="2fa-msg" style="color: red; font-size: 12px; margin-top: 10px;"></p>';
 
                             new QRCode(document.getElementById("qrcode"), {
                                 text: data.qr,
@@ -388,15 +401,15 @@ export default {
                                 });
                                 const verifyData = await verifyRes.json();
                                 if (verifyData.success) {
-                                    alert('双重验证已启用！');
+                                    alert('双重验证已启用！下次登录时需要输入验证码。');
                                     loadStatus();
                                 } else {
-                                    document.getElementById('2fa-msg').textContent = '验证失败，请重试';
+                                    document.getElementById('2fa-msg').textContent = '验证失败，请确保验证码正确';
                                     btn.disabled = false;
                                     btn.textContent = '确认启用';
                                 }
                             };
-                        }
+                        };
                     })();
                     </script>
                     `;
@@ -499,7 +512,7 @@ export default {
                             const ECHLINK参数 = config_JSON.ECH ? `&ech=${encodeURIComponent((config_JSON.ECHConfig.SNI ? config_JSON.ECHConfig.SNI + '+' : '') + config_JSON.ECHConfig.DNS)}` : '';
                             订阅内容 = 其他节点LINK + 完整优选IP.map(原始地址 => {
                                 // 统一正则: 匹配 域名/IPv4/IPv6地址 + 可选端口 + 可选备注
-                                // 示例: 
+                                // 示例:
                                 //   - 域名: hj.xmm1993.top:2096#备注 或 example.com
                                 //   - IPv4: 166.0.188.128:443#Los Angeles 或 166.0.188.128
                                 //   - IPv6: [2606:4700::]:443#CMCC 或 [2606:4700::]
@@ -2302,12 +2315,12 @@ async function nginx() {
 	<h1>Welcome to nginx!</h1>
 	<p>If you see this page, the nginx web server is successfully installed and
 	working. Further configuration is required.</p>
-	
+
 	<p>For online documentation and support please refer to
 	<a href="http://nginx.org/">nginx.org</a>.<br/>
 	Commercial support is available at
 	<a href="http://nginx.com/">nginx.com</a>.</p>
-	
+
 	<p><em>Thank you for using nginx.</em></p>
 	</body>
 	</html>
@@ -2360,24 +2373,24 @@ async function html1101(host, 访问IP) {
                 </h1>
                 <h2 class="cf-subheadline" data-translate="error_desc">Worker threw exception</h2>
             </div><!-- /.header -->
-    
+
             <section></section><!-- spacer -->
-    
+
             <div class="cf-section cf-wrapper">
                 <div class="cf-columns two">
                     <div class="cf-column">
                         <h2 data-translate="what_happened">What happened?</h2>
                             <p>You've requested a page on a website (${host}) that is on the <a href="https://www.cloudflare.com/5xx-error-landing?utm_source=error_100x" target="_blank">Cloudflare</a> network. An unknown error occurred while rendering the page.</p>
                     </div>
-                    
+
                     <div class="cf-column">
                         <h2 data-translate="what_can_i_do">What can I do?</h2>
                             <p><strong>If you are the owner of this website:</strong><br />refer to <a href="https://developers.cloudflare.com/workers/observability/errors/" target="_blank">Workers - Errors and Exceptions</a> and check Workers Logs for ${host}.</p>
                     </div>
-                    
+
                 </div>
             </div><!-- /.section -->
-    
+
             <div class="cf-error-footer cf-wrapper w-240 lg:w-full py-10 sm:py-4 sm:px-8 mx-auto text-center sm:text-left border-solid border-0 border-t border-gray-300">
     <p class="text-13">
       <span class="cf-footer-item sm:block sm:mb-1">Cloudflare Ray ID: <strong class="font-semibold"> ${随机字符串}</strong></span>
@@ -2389,7 +2402,7 @@ async function html1101(host, 访问IP) {
         <span class="cf-footer-separator sm:hidden">&bull;</span>
       </span>
       <span class="cf-footer-item sm:block sm:mb-1"><span>Performance &amp; security by</span> <a rel="noopener noreferrer" href="https://www.cloudflare.com/5xx-error-landing" id="brand_link" target="_blank">Cloudflare</a></span>
-      
+
     </p>
     <script>(function(){function d(){var b=a.getElementById("cf-footer-item-ip"),c=a.getElementById("cf-footer-ip-reveal");b&&"classList"in b&&(b.classList.remove("hidden"),c.addEventListener("click",function(){c.classList.add("hidden");a.getElementById("cf-footer-ip").classList.remove("hidden")}))}var a=document;document.addEventListener&&a.addEventListener("DOMContentLoaded",d)})();</script>
   </div><!-- /.error-footer -->
@@ -2399,9 +2412,9 @@ async function html1101(host, 访问IP) {
 
      <script>
     window._cf_translation = {};
-    
-    
-  </script> 
+
+
+  </script>
 </body>
 </html>`;
 }
